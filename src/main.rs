@@ -4,12 +4,12 @@ mod simple_c;
 mod solver;
 
 fn main() {
-    use simple_c::SimpleCStatement as S;
-    let my_program = [
-        S::AddrOf { lhs: "q", rhs: "x" },
-        S::AddrOf { lhs: "w", rhs: "p" },
-        S::AddrOf { lhs: "w", rhs: "r" },
-        S::Store { lhs: "w", rhs: "q" },
-    ];
-    simple_c::demand::analyze(my_program.into(), [Query::PointsTo("p")]);
+    let my_program = simple_c! {
+        q  <- &x
+        w  <- &p
+        w  <- &r
+        *w <- q
+    };
+    simple_c::demand::analyze(&my_program, [Query::PointsTo("p")]);
+    simple_c::exhaustive::analyze(&my_program);
 }
