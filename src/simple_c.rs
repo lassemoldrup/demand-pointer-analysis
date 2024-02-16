@@ -332,7 +332,10 @@ mod test {
     }
 
     #[quickcheck]
-    fn correctness(prog: SimpleCProgram<'static>, query: Query<'static>) -> bool {
+    fn demand_driven_equals_exhaustive(
+        prog: SimpleCProgram<'static>,
+        query: Query<'static>,
+    ) -> bool {
         let points_to_exhaustive = exhaustive::analyze(&prog);
         let points_to_demand = demand::analyze(&prog, [query]).0;
 
@@ -360,5 +363,64 @@ mod test {
                 exhaustive_pointers == demand_pointers
             }
         }
+    }
+
+    #[test]
+    fn exhaustive_assignment_chain() {
+        let prog = simple_c! {
+            s <- &y
+            p <- &x
+            q <- p
+            r <- q
+        };
+        let res = exhaustive::analyze(&prog);
+        assert!(res.contains(&exhaustive::PointsTo("r", "x")));
+        assert!(!res.contains(&exhaustive::PointsTo("r", "y")));
+    }
+
+    #[test]
+    fn exhaustive_store() {
+        let prog = simple_c! {
+            p  <- &x
+            q  <- &p
+            yp <- &y
+            *q <- yp
+        };
+        let res = exhaustive::analyze(&prog);
+        assert!(res.contains(&exhaustive::PointsTo("p", "x")));
+        assert!(res.contains(&exhaustive::PointsTo("p", "y")));
+        assert!(!res.contains(&exhaustive::PointsTo("p", "p")));
+    }
+
+    #[test]
+    fn exhaustive_load() {
+        let prog = simple_c! {
+            p <- &x
+            q <- &p
+            r <- *q
+        };
+        let res = exhaustive::analyze(&prog);
+        assert!(res.contains(&exhaustive::PointsTo("r", "x")));
+        assert!(!res.contains(&exhaustive::PointsTo("r", "p")));
+    }
+
+    #[quickcheck]
+    fn exhaustive_satisfies_constraint(prog: SimpleCProgram<'static>) -> bool {
+        use super::exhaustive::*;
+        let res = analyze(&prog);
+        let points_to_set = |pt| {
+            res.iter()
+                .filter_map(move |&PointsTo(p, x)| (pt == p).then_some(x))
+        };
+        prog.0.into_iter().all(|stmt| match stmt {
+            SimpleCStatement::AddrOf { lhs, rhs } => res.contains(&PointsTo(lhs, rhs)),
+            SimpleCStatement::Assign { lhs, rhs } => {
+                points_to_set(rhs).all(|x| res.contains(&PointsTo(lhs, x)))
+            }
+            SimpleCStatement::Load { lhs, rhs } => points_to_set(rhs)
+                .all(|p| points_to_set(p).all(|x| res.contains(&PointsTo(lhs, x)))),
+            SimpleCStatement::Store { lhs, rhs } => points_to_set(lhs)
+                .all(|p| points_to_set(rhs).all(|x| res.contains(&PointsTo(p, x)))),
+        })
     }
 }
