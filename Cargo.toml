@@ -9,3 +9,7 @@ edition = "2021"
 crepe = "0.1.8"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
+itertools = "0.12"
+
+[profile.test]
+opt-level = 3

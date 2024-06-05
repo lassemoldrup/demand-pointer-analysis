@@ -101,6 +101,8 @@ pub mod demand {
         @input
         struct StoreStatement<'a>(Var<'a>, Var<'a>);
 
+        struct Copy<'a>(Var<'a>, Var<'a>);
+
         @output
         #[derive(Debug)]
         pub struct PointsTo<'a>(pub Var<'a>, pub Var<'a>);
@@ -118,59 +120,43 @@ pub mod demand {
         // Flip
         PointedByQuery(x) <- PointsToQuery(x);
         // Chain
-        PointedByQuery(x) <- PointsTo(x, y), PointedByQuery(y);
+        PointedByQuery(x) <- PointsTo(x, t), PointedByQuery(t);
 
-        // AddrOf-1
+        // AddrOf-PT
         PointsTo(x, y) <- PointsToQuery(x),
             AddrOfStatement(x, y);
 
-        // AddrOf-2
+        // AddrOf-PB
         PointsTo(x, y) <- PointedByQuery(y),
             AddrOfStatement(x, y);
 
-        // Assign-1
-        PointsToQuery(y) <- PointsToQuery(x),
-            AssignStatement(x, y);
+        // Assign
+        Copy(y, x) <- AssignStatement(x, y);
 
-        // Assign-2
-        PointsTo(x, z) <- PointsTo(y, z), PointsToQuery(x),
-            AssignStatement(x, y);
+        // Load
+        Copy(t, x) <- PointsTo(y, t),
+            LoadStatement(x, y);
 
-        // Assign-3
-        PointsTo(x, z) <- PointsTo(y, z), PointedByQuery(z),
-            AssignStatement(x, y);
-
-        // Load-1
+        // Load-Query
         PointsToQuery(y) <- PointsToQuery(x),
             LoadStatement(x, y);
 
-        // Load-2
-        PointsToQuery(z) <- PointsTo(y, z), PointsToQuery(x),
-            LoadStatement(x, y);
-
-        // Load-3
-        PointsTo(x, u) <- PointsTo(y, z), PointsTo(z, u), PointsToQuery(x),
-            LoadStatement(x, y);
-
-        // Load-4
-        PointsTo(x, u) <- PointsTo(y, z), PointsTo(z, u), PointedByQuery(u),
-            LoadStatement(x, y);
-
-        // Store-1
-        PointsToQuery(y) <- PointsTo(x, z), PointsToQuery(z),
+        // Store
+        Copy(y, t) <- PointsTo(x, t),
             StoreStatement(x, y);
 
-        // Store-2
-        PointsTo(z, u) <- PointsTo(x, z), PointsTo(y, u), PointsToQuery(z),
+        // Store-Query
+        PointsToQuery(x) <- PointsTo(y, t), PointedByQuery(t),
             StoreStatement(x, y);
 
-        // Store-3
-        PointsToQuery(x) <- PointsTo(y, u), PointedByQuery(u),
-            StoreStatement(x, y);
+        // Copy-PT
+        PointsTo(x, t) <- PointsTo(y, t), Copy(y, x), PointsToQuery(x);
 
-        // Store-4
-        PointsTo(z, u) <- PointsTo(x, z), PointsTo(y, u), PointedByQuery(u),
-            StoreStatement(x, y);
+        // Copy-PB
+        PointsTo(x, t) <- PointsTo(y, t), Copy(y, x), PointedByQuery(t);
+
+        // Copy-Query
+        PointsToQuery(y) <- PointsToQuery(x), Copy(y, x);
     }
 
     pub fn analyze<'a>(
@@ -225,6 +211,8 @@ pub mod exhaustive {
         @input
         struct StoreStatement<'a>(Var<'a>, Var<'a>);
 
+        struct Copy<'a>(Var<'a>, Var<'a>);
+
         @output
         #[derive(Debug)]
         pub struct PointsTo<'a>(pub Var<'a>, pub Var<'a>);
@@ -234,16 +222,19 @@ pub mod exhaustive {
             AddrOfStatement(x, y);
 
         // Assign
-        PointsTo(x, z) <- PointsTo(y, z),
+        Copy(y, x) <-
             AssignStatement(x, y);
 
         // Load
-        PointsTo(x, u) <- PointsTo(y, z), PointsTo(z, u),
+        Copy(t, x) <- PointsTo(y, t),
             LoadStatement(x, y);
 
         // Store
-        PointsTo(z, u) <- PointsTo(x, z), PointsTo(y, u),
+        Copy(y, t) <- PointsTo(x, t),
             StoreStatement(x, y);
+
+        // Copy
+        PointsTo(x, t) <- PointsTo(y, t), Copy(y, x);
     }
 
     pub fn analyze<'a>(program: &SimpleCProgram<'a>) -> HashSet<PointsTo<'a>> {
@@ -266,24 +257,23 @@ pub mod exhaustive {
     }
 }
 
+pub fn get_vars(n: usize) -> impl Iterator<Item = &'static str> {
+    ('a'..='z')
+        .map(String::from)
+        .chain((1..).map(|n| n.to_string()))
+        .map(|s| s.leak() as &'static str)
+        .take(n)
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
 
+    use itertools::Itertools;
     use quickcheck::Arbitrary;
     use quickcheck_macros::quickcheck;
 
     use super::*;
-
-    fn get_vars(n: usize) -> Vec<&'static str> {
-        ('a'..='z')
-            .map(String::from)
-            .chain((1..).map(|n| n.to_string()))
-            .map(|s| s.leak() as &'static str)
-            .take(n)
-            .collect()
-    }
-
     impl Arbitrary for SimpleCStatement<'static> {
         fn arbitrary(_g: &mut quickcheck::Gen) -> Self {
             panic!("Shouldn't generate like this")
@@ -294,7 +284,7 @@ mod test {
         fn arbitrary(g: &mut quickcheck::Gen) -> Self {
             let num_stmts = g.size();
             let num_vars = g.size() / 5 + 2;
-            let variables = get_vars(num_vars);
+            let variables = get_vars(num_vars).collect_vec();
 
             let mut prog = Vec::with_capacity(num_stmts);
             for _ in 0..num_stmts {
@@ -309,18 +299,18 @@ mod test {
                     _ => panic!("Oh no"),
                 }
             }
-            SimpleCProgram(prog)
+            Self(prog)
         }
 
         fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-            Box::new(self.0.shrink().map(SimpleCProgram))
+            Box::new(self.0.shrink().map(Self))
         }
     }
 
     impl Arbitrary for Query<'static> {
         fn arbitrary(g: &mut quickcheck::Gen) -> Self {
             let num_vars = g.size() / 5 + 2;
-            let variables = get_vars(num_vars);
+            let variables = get_vars(num_vars).collect_vec();
             let var = g.choose(&variables).unwrap();
             let kind = g.choose(&[0, 1]).unwrap();
             if *kind == 0 {
@@ -332,10 +322,7 @@ mod test {
     }
 
     #[quickcheck]
-    fn demand_driven_equals_exhaustive(
-        prog: SimpleCProgram<'static>,
-        query: Query<'static>,
-    ) -> bool {
+    fn demand_driven_correctness(prog: SimpleCProgram<'static>, query: Query<'static>) -> bool {
         let points_to_exhaustive = exhaustive::analyze(&prog);
         let points_to_demand = demand::analyze(&prog, [query]).0;
 
@@ -363,6 +350,20 @@ mod test {
                 exhaustive_pointers == demand_pointers
             }
         }
+    }
+
+    #[quickcheck]
+    fn query_completeness(prog: SimpleCProgram<'static>, query: Query<'static>) -> bool {
+        let (points_to, queries_pt, queries_pb) = demand::analyze(&prog, [query]);
+
+        for demand::PointsTo(x, y) in points_to {
+            if !queries_pt.contains(&demand::PointsToQuery(x))
+                && !queries_pb.contains(&demand::PointedByQuery(y))
+            {
+                return false;
+            }
+        }
+        true
     }
 
     #[test]
