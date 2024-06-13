@@ -13,6 +13,12 @@ pub enum Ident<'a> {
 }
 
 impl<'a> Ident<'a> {
+    pub fn name(self) -> Var<'a> {
+        match self {
+            Self::Var(v) | Self::Param(v) | Self::Return(v) | Self::Function(v) => v,
+        }
+    }
+
     pub fn is_function(self) -> bool {
         matches!(self, Self::Function(_))
     }
@@ -216,6 +222,7 @@ impl Arbitrary for HigherOrderCProgram<'static> {
 
 impl<'a> Display for HigherOrderCProgram<'a> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        writeln!(f, "Globals: {:?}\n", self.globals)?;
         writeln!(f, "{}", self.main)?;
         for fun in &self.funs {
             writeln!(f, "{}", fun)?;

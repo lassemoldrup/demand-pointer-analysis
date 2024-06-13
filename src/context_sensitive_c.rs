@@ -99,8 +99,20 @@ pub mod demand {
         @input
         struct Globals<'a>(GlobalsWrapper<'a>);
 
+        // Variables declared in functions
         @input
         struct VarFun<'a>(Ident<'a>, Var<'a>);
+
+        // Functions mentioned in other functions (mentioned, containing)
+        @input
+        struct FunFun<'a>(Var<'a>, Var<'a>);
+
+        // Global variables mentioned in functions
+        @input
+        struct GlobalFun<'a>(Ident<'a>, Var<'a>);
+
+        @input
+        struct InInstantiated<'a>(Var<'a>, Context);
 
         struct Copy<'a>(IdentInContext<'a>, IdentInContext<'a>);
 
@@ -250,7 +262,32 @@ pub mod demand {
         PointsTo(x.0, y.0) <- ContextPointsTo(x, y);
 
         // Enter
-        Instantiated(f, Context::empty()) <- FunDeclStatement(f);
+        // Instantiated(f, Context::empty()) <- FunDeclStatement(f);
+
+        Instantiated(f, c) <- InInstantiated(f, c);
+
+        // Mention-1
+        ContextPointedByQuery(Ident::Function(g).in_empty()) <- FunFun(f, g),
+            ContextPointedByQuery(Ident::Function(f).in_empty());
+
+        // Mention-2
+        ContextPointedByQuery(Ident::Function(f).in_empty()) <- VarFun(x, f),
+            PointsToQuery(x);
+
+        // Mention-3
+        ContextPointedByQuery(Ident::Function(f).in_empty()) <- VarFun(x, f),
+            PointedByQuery(x);
+
+        // Mention-4
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- GlobalFun(x, f),
+            ContextPointsToQuery(xc),
+            (xc.0 == x);
+
+        // Mention-5
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- GlobalFun(x, f),
+            ContextPointedByQuery(xc),
+            (xc.0 == x);
+
     }
 
     pub fn analyze<'a>(
@@ -264,11 +301,15 @@ pub mod demand {
     ) {
         let mut runtime = Crepe::new();
 
+        let mut functions = HashSet::new();
         let globals = program.globals.iter().map(|&x| Ident::Var(x)).collect();
         let globals = Box::into_raw(Box::new(globals));
         runtime.extend([Globals(GlobalsWrapper(unsafe { &*globals }))]);
         runtime.extend([FunDeclStatement(MAIN)]);
+        // Comment out for Approach 1
+        runtime.extend([InInstantiated(MAIN, Context::empty())]);
         for fun in &program.funs {
+            functions.insert(fun.name);
             runtime.extend([FunDeclStatement(fun.name)])
         }
         for (i, (fun, stmt)) in program.all_statements_with_funs().enumerate() {
@@ -296,7 +337,12 @@ pub mod demand {
             };
             let globals = unsafe { &*globals };
             for var in vars {
-                if !globals.contains(&var) {
+                if functions.contains(&var.name()) {
+                    runtime.extend([FunFun(var.name(), fun)]);
+                }
+                if globals.contains(&var) {
+                    runtime.extend([GlobalFun(var, fun)]);
+                } else {
                     runtime.extend([VarFun(var, fun)]);
                 }
             }
@@ -346,6 +392,9 @@ pub mod exhaustive {
         // We sneak in a set of global variables as an input to the analysis
         @input
         struct Globals<'a>(GlobalsWrapper<'a>);
+
+        @input
+        struct InInstantiated<'a>(Var<'a>, Context);
 
         struct Copy<'a>(IdentInContext<'a>, IdentInContext<'a>);
 
@@ -413,7 +462,9 @@ pub mod exhaustive {
         PointsTo(x.0, y.0) <- ContextPointsTo(x, y);
 
         // Enter
-        Instantiated(f, Context::empty()) <- FunDeclStatement(f);
+        // Instantiated(f, Context::empty()) <- FunDeclStatement(f);
+
+        Instantiated(f, c) <- InInstantiated(f, c);
     }
 
     pub fn analyze<'a>(program: &'a HigherOrderCProgram<'a>) -> HashSet<PointsTo<'a>> {
@@ -423,6 +474,8 @@ pub mod exhaustive {
         let globals = Box::into_raw(Box::new(globals));
         runtime.extend([Globals(GlobalsWrapper(unsafe { &*globals }))]);
         runtime.extend([FunDeclStatement(MAIN)]);
+        // Comment out for Approach 1
+        runtime.extend([InInstantiated(MAIN, Context::empty())]);
         for fun in &program.funs {
             runtime.extend([FunDeclStatement(fun.name)])
         }
