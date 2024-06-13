@@ -103,13 +103,13 @@ pub mod demand {
         @input
         struct VarFun<'a>(Ident<'a>, Var<'a>);
 
-        // Functions mentioned in other functions (mentioned, containing)
-        @input
-        struct FunFun<'a>(Var<'a>, Var<'a>);
+        // // Functions mentioned in other functions (mentioned, containing)
+        // @input
+        // struct FunFun<'a>(Var<'a>, Var<'a>);
 
-        // Global variables mentioned in functions
-        @input
-        struct GlobalFun<'a>(Ident<'a>, Var<'a>);
+        // // Global variables mentioned in functions
+        // @input
+        // struct GlobalFun<'a>(Ident<'a>, Var<'a>);
 
         @input
         struct InInstantiated<'a>(Var<'a>, Context);
@@ -267,7 +267,13 @@ pub mod demand {
         Instantiated(f, c) <- InInstantiated(f, c);
 
         // Mention-1
-        ContextPointedByQuery(Ident::Function(g).in_empty()) <- FunFun(f, g),
+        ContextPointedByQuery(Ident::Function(g).in_empty()) <- FunDeclStatement(f),
+            FunCallStatement(_, Ident::Var(f), _, g, _),
+            ContextPointedByQuery(Ident::Function(f).in_empty());
+
+        // Mention-1
+        ContextPointedByQuery(Ident::Function(g).in_empty()) <- FunDeclStatement(f),
+            AssignStatement(_, Ident::Var(f), g),
             ContextPointedByQuery(Ident::Function(f).in_empty());
 
         // Mention-2
@@ -279,15 +285,72 @@ pub mod demand {
             PointedByQuery(x);
 
         // Mention-4
-        ContextPointsToQuery(Ident::Function(f).in_empty()) <- GlobalFun(x, f),
-            ContextPointsToQuery(xc),
-            (xc.0 == x);
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
+            AssignStatement(x, _, f),
+            Globals(gs),
+            ContextPointsToQuery(x.in_empty()),
+            (gs.contains(x));
+
+        // Mention-4
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
+            AddrOfStatement(x, _, f),
+            Globals(gs),
+            ContextPointsToQuery(x.in_empty()),
+            (gs.contains(x));
+
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
+            LoadStatement(x, _, f),
+            Globals(gs),
+            ContextPointsToQuery(x.in_empty()),
+            (gs.contains(x));
+
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
+            FunCallStatement(x, _, _, f, _),
+            Globals(gs),
+            ContextPointsToQuery(x.in_empty()),
+            (gs.contains(x));
 
         // Mention-5
-        ContextPointsToQuery(Ident::Function(f).in_empty()) <- GlobalFun(x, f),
-            ContextPointedByQuery(xc),
-            (xc.0 == x);
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
+            StoreStatement(x, _, f),
+            Globals(gs),
+            ContextPointsToQuery(x.in_empty()),
+            (gs.contains(x));
 
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
+            AddrOfStatement(_, x, f),
+            Globals(gs),
+            ContextPointedByQuery(x.in_empty()),
+            (gs.contains(x));
+
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
+            AssignStatement(_, x, f),
+            Globals(gs),
+            ContextPointsTo(x.in_empty(), t),
+            ContextPointedByQuery(t),
+            (gs.contains(x));
+
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
+            StoreStatement(_, x, f),
+            Globals(gs),
+            ContextPointsTo(x.in_empty(), t),
+            ContextPointedByQuery(t),
+            (gs.contains(x));
+
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
+            FunCallStatement(_, _, x, f, _),
+            Globals(gs),
+            ContextPointsTo(x.in_empty(), t),
+            ContextPointedByQuery(t),
+            (gs.contains(x));
+
+        ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
+            LoadStatement(_, x, f),
+            Globals(gs),
+            ContextPointsTo(x.in_empty(), t),
+            ContextPointsTo(t, t2),
+            ContextPointedByQuery(t2),
+            (gs.contains(x));
     }
 
     pub fn analyze<'a>(
@@ -337,11 +400,11 @@ pub mod demand {
             };
             let globals = unsafe { &*globals };
             for var in vars {
-                if functions.contains(&var.name()) {
-                    runtime.extend([FunFun(var.name(), fun)]);
-                }
+                // if functions.contains(&var.name()) {
+                //     runtime.extend([FunFun(var.name(), fun)]);
+                // }
                 if globals.contains(&var) {
-                    runtime.extend([GlobalFun(var, fun)]);
+                    // runtime.extend([GlobalFun(var, fun)]);
                 } else {
                     runtime.extend([VarFun(var, fun)]);
                 }
