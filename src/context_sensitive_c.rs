@@ -268,13 +268,16 @@ pub mod demand {
 
         // Mention-1
         ContextPointedByQuery(Ident::Function(g).in_empty()) <- FunDeclStatement(f),
-            FunCallStatement(_, Ident::Var(f), _, g, _),
-            ContextPointedByQuery(Ident::Function(f).in_empty());
+            FunCallStatement(_, h, _, g, _),
+            ContextPointsTo(h.in_empty(), Ident::Function(f).in_empty()),
+            ContextPointedByQuery(Ident::Function(f).in_empty()),
+            Globals(gs),
+            (gs.contains(h));
 
         // Mention-1
-        ContextPointedByQuery(Ident::Function(g).in_empty()) <- FunDeclStatement(f),
-            AssignStatement(_, Ident::Var(f), g),
-            ContextPointedByQuery(Ident::Function(f).in_empty());
+        // ContextPointedByQuery(Ident::Function(g).in_empty()) <- FunDeclStatement(f),
+        //     AssignStatement(_, Ident::Var(f), g),
+        //     ContextPointedByQuery(Ident::Function(f).in_empty());
 
         // Mention-2
         ContextPointedByQuery(Ident::Function(f).in_empty()) <- VarFun(x, f),
@@ -314,7 +317,8 @@ pub mod demand {
         ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
             StoreStatement(x, _, f),
             Globals(gs),
-            ContextPointsToQuery(x.in_empty()),
+            ContextPointsTo(x.in_empty(), t),
+            ContextPointsToQuery(t),
             (gs.contains(x));
 
         ContextPointsToQuery(Ident::Function(f).in_empty()) <- //GlobalFun(x, f),
